@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class EncoderCNN(nn.Module):
     def __init__(self, embed_size):
@@ -35,15 +36,34 @@ class DecoderRNN(nn.Module):
 
         self.linear = nn.Linear(hidden_size, vocab_size)
     
+    def init_hidden(self,batch_size):
+        
+        return (torch.zeros(1,batch_size,self.hidden_size,device=device),\
+            torch.zeros(1,batch_size,self.hidden_size,device=device))
+
+    
     def forward(self, features, captions):
+        batch_size = features.size()[0]
+        hidden = self.init_hidden(batch_size)
         embeds = self.word_embeddings(captions[:,:-1])
         inputs = torch.cat((features.unsqueeze(1),embeds),1)
 
-        lstm_out, _ = self.lstm(inputs)
+        lstm_out, hidden = self.lstm(inputs,hidden)
         outputs = self.linear(lstm_out)
 
         return outputs
 
     def sample(self, inputs, states=None, max_len=20):
         " accepts pre-processed image tensor (inputs) and returns predicted sentence (list of tensor ids of length max_len) "
-        pass
+        caption =[]
+        batch_size = inputs.size()[0]
+        states = self.init_hidden(batch_size)
+        for i in range(max_len):
+            lstm_out, states = self.lstm(inputs,states)
+            outputs = self.linear(lstm_out.squeeze(1))
+            _ , predicted = outputs.max(dim=1)
+            caption.append(predicted.item())
+
+            inputs = self.word_embeddings(predicted)
+            inputs = inputs.unsqueeze(1)
+        return caption
